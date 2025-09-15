@@ -1,0 +1,219 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Professional Resume Builder Design System */
+
+@layer base {
+  :root {
+    /* Brand Colors - Professional Blue/Purple Palette */
+    --background: 220 25% 97%;
+    --foreground: 220 85% 8%;
+    
+    /* Primary Brand Colors */
+    --primary: 242 85% 62%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 242 85% 72%;
+    --primary-dark: 242 85% 52%;
+    
+    /* Secondary Colors */
+    --secondary: 260 45% 95%;
+    --secondary-foreground: 242 85% 20%;
+    
+    /* Accent Colors */
+    --accent: 280 85% 65%;
+    --accent-foreground: 0 0% 100%;
+    
+    /* Surface Colors */
+    --card: 0 0% 100%;
+    --card-foreground: 220 85% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 85% 8%;
+    
+    /* UI States */
+    --muted: 220 20% 94%;
+    --muted-foreground: 220 25% 45%;
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 242 85% 62%;
+    
+    /* Status Colors */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    
+    /* Custom Design Tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(242 85% 62%), hsl(280 85% 65%));
+    --gradient-hero: linear-gradient(135deg, hsl(242 85% 62%) 0%, hsl(280 85% 65%) 50%, hsl(320 85% 68%) 100%);
+    --gradient-background: linear-gradient(180deg, hsl(220 25% 97%) 0%, hsl(242 20% 96%) 100%);
+    --shadow-soft: 0 4px 6px -1px hsl(242 85% 62% / 0.1), 0 2px 4px -2px hsl(242 85% 62% / 0.1);
+    --shadow-medium: 0 10px 15px -3px hsl(242 85% 62% / 0.1), 0 4px 6px -4px hsl(242 85% 62% / 0.1);
+    --shadow-large: 0 25px 50px -12px hsl(242 85% 62% / 0.25);
+    --shadow-glow: 0 0 40px hsl(242 85% 62% / 0.3);
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 85% 8%;
+    --foreground: 220 25% 97%;
+    --card: 220 75% 12%;
+    --card-foreground: 220 25% 97%;
+    --popover: 220 75% 12%;
+    --popover-foreground: 220 25% 97%;
+    --primary: 242 85% 70%;
+    --primary-foreground: 220 85% 8%;
+    --secondary: 220 75% 15%;
+    --secondary-foreground: 220 25% 97%;
+    --muted: 220 75% 15%;
+    --muted-foreground: 220 25% 65%;
+    --accent: 280 85% 70%;
+    --accent-foreground: 220 85% 8%;
+    --border: 220 75% 20%;
+    --input: 220 75% 20%;
+    --ring: 242 85% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground min-h-screen;
+    background: var(--gradient-background);
+  }
+}
+
+@layer components {
+  /* Animation utilities */
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.8s ease-out forwards;
+  }
+  
+  .animate-fade-in-delay-1 {
+    animation: fadeIn 0.8s ease-out 0.2s forwards;
+    opacity: 0;
+  }
+  
+  .animate-fade-in-delay-2 {
+    animation: fadeIn 0.8s ease-out 0.4s forwards;
+    opacity: 0;
+  }
+  
+  .animate-fade-in-delay-3 {
+    animation: fadeIn 0.8s ease-out 0.6s forwards;
+    opacity: 0;
+  }
+
+  /* Responsive button utilities */
+  .btn-responsive {
+    @apply transition-all duration-200 hover:scale-105 active:scale-95 hover:shadow-glow;
+  }
+  
+  .btn-mobile {
+    @apply px-4 py-3 text-sm;
+  }
+  
+  @media (min-width: 640px) {
+    .btn-mobile {
+      @apply px-6 py-3 text-base;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .btn-mobile {
+      @apply px-8 py-4 text-lg;
+    }
+  }
+
+  /* Glass morphism effect */
+  .glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  /* Custom gradients */
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+  
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  /* Custom shadows */
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Enhanced layouts */
+  .section-padding {
+    @apply px-4 py-12;
+  }
+  
+  @media (min-width: 640px) {
+    .section-padding {
+      @apply px-6 py-16;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .section-padding {
+      @apply px-8 py-20;
+    }
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
