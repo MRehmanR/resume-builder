@@ -1,22 +1,16 @@
-import asyncio
-import inspect
-import json
-import logging
-import concurrent.futures
-from typing import Any, Callable, Dict, Optional, List
+import asyncio, inspect, json, logging, pdfplumber
+from typing import Any, Callable, Dict, Optional
 from pathlib import Path
-
-import pdfplumber
 from docx import Document
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.agents import Tool, initialize_agent, AgentType
 from langchain_openai import ChatOpenAI
 from sqlalchemy.orm import Session
-
 from database.db import get_db, engine, Base
 from database.models import Chat, Message
 from prompt import SYSTEM_PROMPT
 from tools import personal_info, summary, experience, education, skills, projects, achievements
+from routers import jd_parser, collaboration, ats_scoring, gap_detection, manual_editor
 
 Base.metadata.create_all(bind=engine)
 
@@ -24,43 +18,34 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 DEFAULT_SESSION = "default_session"
-
-
 session_store: Dict[str, Dict[str, Any]] = {}
+RESUME_TOOLS = [
+    "personal_info", "summary", "experience", "education", "skills", "projects", "achievements",
+    "jd_parser", "collaboration", "ats_scoring", "gap_detection", "auto_polish", "versioning"
+]
 
-RESUME_TOOLS = ["personal_info", "summary", "experience", "education", "skills", "projects", "achievements"]
 
-
-
-async def call_tool(tool_func: Callable[..., Any], input_data: Any, session_id: str) -> Any:
+async def call_tool(tool_func: Callable[..., Any], input_data: Any, session_id: str) -> str:
     sid = session_id or DEFAULT_SESSION
-    query = ""
-    if isinstance(input_data, str):
-        try:
-            parsed = json.loads(input_data)
-            if isinstance(parsed, dict):
-                query = parsed.get("query", "")
-                sid = parsed.get("session_id", sid)
-            else:
-                query = input_data
-        except (json.JSONDecodeError, TypeError):
-            query = input_data
-    elif isinstance(input_data, dict):
-        query = input_data.get("query", "")
-        sid = input_data.get("session_id", sid)
-    else:
-        query = str(input_data)
+    query = str(input_data)
 
     try:
         if inspect.iscoroutinefunction(tool_func):
-            return await tool_func(query, sid)
+            output = await tool_func(query, sid)
         else:
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, lambda: tool_func(query, sid))
+            output = await loop.run_in_executor(None, lambda: tool_func(query, sid))
+
+        if isinstance(output, dict):
+            output = json.dumps(output, ensure_ascii=False, indent=2)
+        elif not isinstance(output, str):
+            output = str(output)
+
+        return output
+
     except Exception as e:
         logger.exception("Error calling tool_func %s", getattr(tool_func, "__name__", str(tool_func)))
         return f"[tool_error] {str(e)}"
-
 
 
 async def _personal_info_async(query, session_id): return await call_tool(personal_info.personal_info_tool, query,
@@ -86,30 +71,34 @@ async def _achievements_async(query, session_id): return await call_tool(achieve
                                                                          session_id)
 
 
+async def _jd_parser_async(query, session_id): return await call_tool(jd_parser, query, session_id)
+
+
+async def _collaboration_async(query, session_id): return await call_tool(collaboration, query, session_id)
+
+
+async def _ats_scoring_async(query, session_id): return await call_tool(ats_scoring, query, session_id)
+
+
+async def _gap_detection_async(query, session_id): return await call_tool(gap_detection, query, session_id)
+
+
+async def _manual_editor_async(query, session_id): return await call_tool(manual_editor, query, session_id)
+
+
 def bridge_for(async_callable: Callable[[Any, str], Any]) -> Callable[[Any, Optional[str]], Any]:
-    def sync_or_awaitable(input_data, session_id: Optional[str] = None):
-        session = session_id or DEFAULT_SESSION
-        coro = async_callable(input_data, session)
+    def wrapper(input_data, session_id: Optional[str] = None):
+        sid = session_id or DEFAULT_SESSION
+        coro = async_callable(input_data, sid)
         try:
             loop = asyncio.get_running_loop()
+            if loop.is_running():
+                return asyncio.create_task(coro)
         except RuntimeError:
-            loop = None
-        if loop and loop.is_running():
-            return asyncio.create_task(coro)
+            pass
+        return asyncio.run(coro)
 
-        def _run_in_new_loop(c):
-            new_loop = asyncio.new_event_loop()
-            try:
-                asyncio.set_event_loop(new_loop)
-                return new_loop.run_until_complete(c)
-            finally:
-                new_loop.close()
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            fut = ex.submit(_run_in_new_loop, coro)
-            return fut.result()
-
-    return sync_or_awaitable
+    return wrapper
 
 
 personal_info_bridge = bridge_for(_personal_info_async)
@@ -119,6 +108,11 @@ education_bridge = bridge_for(_education_async)
 skills_bridge = bridge_for(_skills_async)
 projects_bridge = bridge_for(_projects_async)
 achievements_bridge = bridge_for(_achievements_async)
+jd_parser_bridge = bridge_for(_jd_parser_async)
+collaboration_bridge = bridge_for(_collaboration_async)
+ats_scoring_bridge = bridge_for(_ats_scoring_async)
+gap_detection_bridge = bridge_for(_gap_detection_async)
+manual_editor_bridge = bridge_for(_manual_editor_async)
 
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -130,9 +124,13 @@ tools = [
     Tool(name="skills", func=skills_bridge, description="Extract skills from text"),
     Tool(name="projects", func=projects_bridge, description="Extract project details"),
     Tool(name="achievements", func=achievements_bridge, description="Extract achievements"),
+    Tool(name="jd_parser", func=jd_parser_bridge, description="Parse job description and extract info"),
+    Tool(name="collaboration", func=collaboration_bridge, description="Share resume with mentor/recruiter"),
+    Tool(name="ats_scoring", func=ats_scoring_bridge, description="Score resume against JD"),
+    Tool(name="gap_detection", func=gap_detection_bridge, description="Detect missing or weak sections"),
+    Tool(name="auto_polish", func=manual_editor_bridge, description="Improve vague bullet points"),
 ]
 RESUME_AGENT = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
-
 
 
 async def fallback_handler(query: str, session_id: str, llm_model) -> str:
@@ -144,24 +142,11 @@ async def fallback_handler(query: str, session_id: str, llm_model) -> str:
     return response.generations[0][0].text
 
 
-
-def determine_tool_from_query(query: str) -> Optional[str]:
-    q = query.lower()
-    if any(x in q for x in ["name", "phone", "email", "contact"]):
-        return "personal_info"
-    if any(x in q for x in ["summary", "career objective", "about me"]):
-        return "summary"
-    if any(x in q for x in ["experience", "worked", "company", "job"]):
-        return "experience"
-    if any(x in q for x in ["education", "degree", "university", "school"]):
-        return "education"
-    if any(x in q for x in ["skill", "technology", "tools"]):
-        return "skills"
-    if any(x in q for x in ["project", "application", "app"]):
-        return "projects"
-    if any(x in q for x in ["achievement", "award", "certification", "cert"]):
-        return "achievements"
-    return None
+async def llm_intent_handler(query: str, file_text: str, llm_model):
+    prompt_text = SYSTEM_PROMPT.format(query=query, file_content=file_text)
+    messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt_text)]
+    response = await llm_model.agenerate([messages])
+    return response.generations[0][0].text.strip().lower()
 
 
 class Runner:
@@ -172,11 +157,11 @@ class Runner:
             db = next(db_gen)
 
         session_id = context.get("session_id", DEFAULT_SESSION) if context else DEFAULT_SESSION
-
         if session_id not in session_store:
             session_store[session_id] = {
-                tool: [] if tool in ["experience", "education", "skills", "projects", "achievements"] else None
-                for tool in RESUME_TOOLS}
+                tool: [] if tool in ["experience", "education", "skills", "projects", "achievements"] else {}
+                for tool in RESUME_TOOLS
+            }
         session_data = session_store[session_id]
 
         chat = db.query(Chat).filter(Chat.session_id == session_id).first()
@@ -185,76 +170,86 @@ class Runner:
             db.add(chat)
             db.commit()
             db.refresh(chat)
-
         user_msg = Message(chat_id=chat.id, role="user", content=query)
         db.add(user_msg)
         db.commit()
 
-        uploaded_files = [msg.content.replace("[Attachment]", "").strip()
-                          for msg in chat.messages if msg.content.startswith("[Attachment]")]
+        uploaded_files = [msg.content.replace("[Attachment]", "").strip() for msg in chat.messages if
+                          msg.content.startswith("[Attachment]")]
+        file_text = ""
+        if uploaded_files:
+            file_path = Path("uploads") / uploaded_files[0]
+            if file_path.exists():
+                try:
+                    if file_path.suffix.lower() == ".pdf":
+                        with pdfplumber.open(file_path) as pdf:
+                            file_text = "\n".join([p.extract_text() or "" for p in pdf.pages])
+                    elif file_path.suffix.lower() == ".docx":
+                        doc = Document(file_path)
+                        file_text = "\n".join([p.text for p in doc.paragraphs])
+                except Exception as e:
+                    logger.exception(f"Failed to read file {uploaded_files[0]}: {e}")
+            logger.info(f"Extracted file text length: {len(file_text)}")
 
-        if len(uploaded_files) > 1:
-            prompt = f"[agent_prompt] Multiple files uploaded. Please select which file to use: {', '.join(uploaded_files)}"
+        intent = await llm_intent_handler(query, file_text, llm)
+        logger.info(f"LLM determined intent: {intent}")
+
+        if intent == "create_resume":
+            final_resume = ""
+
+            pi_input = query + "\n" + file_text
+            personal_info_output = await call_tool(personal_info.personal_info_tool, pi_input, session_id)
+
+            if isinstance(personal_info_output, str):
+                try:
+                    personal_info_output = json.loads(personal_info_output)
+                except Exception:
+                    personal_info_output = {}
+
+            session_store[session_id]["personal_info"] = personal_info_output
+
+            final_resume += "## Personal Information\n"
+            for field in ["name", "phone", "email", "linkedin", "github"]:
+                value = personal_info_output.get(field)
+                if value:
+                    field_name = field.capitalize()
+                    if field in ["name", "phone", "email"]:
+                        final_resume += f"- **{field_name}**: {value}\n"
+                    else:
+                        final_resume += f"- {field_name}: {value}\n"
+            final_resume += "\n"
+
+            for tool_name in RESUME_TOOLS:
+                if tool_name == "personal_info":
+                    continue
+                tool_input = file_text
+                output = await call_tool(getattr(tools_module(tool_name), f"{tool_name}_tool"), tool_input, session_id)
+
+                if not output or output.strip() == "":
+                    continue
+
+                if not output.startswith("##"):
+                    output = f"## {tool_name.replace('_', ' ').title()}\n{output.strip()}"
+
+                final_resume += output + "\n\n"
+
+            assistant_msg = Message(chat_id=chat.id, role="assistant", content=final_resume.strip())
+            db.add(assistant_msg)
+            db.commit()
+            return {"final_output": final_resume.strip() or "[No content generated]"}
+
+        elif intent == "ask_tool":
+            prompt = f"Which section of your resume would you like to generate? Options: {', '.join(RESUME_TOOLS)}"
             assistant_msg = Message(chat_id=chat.id, role="assistant", content=prompt)
             db.add(assistant_msg)
             db.commit()
             return {"final_output": prompt}
 
-        file_text = ""
-        if len(uploaded_files) == 1:
-            filename = uploaded_files[0]
-            file_path = Path("uploads") / filename
-            if file_path.exists():
-                if file_path.suffix.lower() == ".pdf":
-                    with pdfplumber.open(file_path) as pdf:
-                        file_text = "\n".join([p.extract_text() or "" for p in pdf.pages])
-                elif file_path.suffix.lower() == ".docx":
-                    doc = Document(file_path)
-                    file_text = "\n".join([p.text for p in doc.paragraphs])
-                else:
-                    file_text = f"[Cannot parse this file type: {file_path.suffix}]"
-            query_with_file = f"{query}\n\n[File Content from {filename}]:\n{file_text}"
-        else:
-            query_with_file = query
-
-        if "build resume" in query.lower() or "create resume" in query.lower():
-            final_resume = ""
-            for tool_name in RESUME_TOOLS:
-                tool_input = session_data.get(tool_name)
-                if not tool_input or (isinstance(tool_input, list) and len(tool_input) == 0):
-                    continue
-                if isinstance(tool_input, list):
-                    for item in tool_input:
-                        output = await call_tool(getattr(tools_module(tool_name), f"{tool_name}_tool"), item,
-                                                 session_id)
-                        final_resume += output + "\n\n"
-                else:
-                    output = await call_tool(getattr(tools_module(tool_name), f"{tool_name}_tool"), tool_input,
-                                             session_id)
-                    final_resume += output + "\n\n"
-            assistant_msg = Message(chat_id=chat.id, role="assistant", content=final_resume.strip())
-            db.add(assistant_msg)
-            db.commit()
-            return {"final_output": final_resume.strip()}
-
-        selected_tool = determine_tool_from_query(query)
-        if not selected_tool:
-            result = await fallback_handler(query_with_file, session_id, llm)
-            assistant_msg = Message(chat_id=chat.id, role="assistant", content=result)
-            db.add(assistant_msg)
-            db.commit()
-            return {"final_output": result}
-
-        if selected_tool in ["experience", "education", "skills", "projects", "achievements"]:
-            session_data[selected_tool].append(query)
-        else:
-            session_data[selected_tool] = query
-
-        prompt = f"[agent_prompt] Please select which resume tool you want to use: {', '.join(RESUME_TOOLS)}"
-        assistant_msg = Message(chat_id=chat.id, role="assistant", content=prompt)
+        result = await fallback_handler(query, session_id, llm)
+        assistant_msg = Message(chat_id=chat.id, role="assistant", content=result)
         db.add(assistant_msg)
         db.commit()
-        return {"final_output": prompt}
+        return {"final_output": result or "[No response from LLM]"}
 
 
 def tools_module(tool_name: str):
@@ -265,12 +260,17 @@ def tools_module(tool_name: str):
         "education": education,
         "skills": skills,
         "projects": projects,
-        "achievements": achievements
+        "achievements": achievements,
+        "jd_parser": jd_parser,
+        "collaboration": collaboration,
+        "ats_scoring": ats_scoring,
+        "gap_detection": gap_detection,
+        "manual_editor": manual_editor,
+
     }[tool_name]
 
 
-
-async def run_resume_agent(query: str, session_id: Optional[str] = None, db: Optional[Session] = None) -> Any:
+async def run_resume_agent(query: str, session_id: Optional[str] = None, db: Optional[Session] = None) -> str:
     ctx = {"session_id": session_id or DEFAULT_SESSION}
     r = await Runner.run(RESUME_AGENT, query, ctx, db=db)
     return r.get("final_output")

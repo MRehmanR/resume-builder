@@ -256,48 +256,68 @@ const Chat = () => {
       {/* Main */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-64 sm:w-56 md:w-64 border-r border-border flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="flex items-center font-semibold">
-              <Sparkles className="h-5 w-5 mr-2 text-brand" /> Chats
-            </h2>
-            <Button size="sm" variant="secondary" onClick={handleNewChat}>
-              <Plus className="mr-1 h-4 w-4" /> New
-            </Button>
-          </div>
-          <div ref={chatListRef} className="flex-1 overflow-y-auto px-2 py-3">
-            <div className="space-y-2">
-              {chatHistory.map((chat) => (
-                <div key={chat.id} className="flex items-center justify-between space-x-2">
-                  <Button
-                    variant={chat.id === activeChatId ? "brand" : "outline"}
-                    className="flex-1 text-left"
-                    onClick={() => handleSelectChat(chat.id)}
-                  >
-                    {chat.title || `Chat ${chat.chat_id}`}
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDeleteChat(chat.id)}>
-                    <Trash className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              ))}
+        {/* Sidebar */}
+<div className="w-64 sm:w-56 md:w-64 border-r border-border flex flex-col">
+  <div className="flex items-center justify-between p-4 border-b">
+    <h2 className="flex items-center font-semibold">
+      <Sparkles className="h-5 w-5 mr-2 text-brand" /> Chats
+    </h2>
+    <Button size="sm" variant="secondary" onClick={handleNewChat}>
+      <Plus className="mr-1 h-4 w-4" /> New
+    </Button>
+  </div>
 
-              {chatHistory.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center mt-6">
-                  No chats yet — start by typing a message.
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="p-4 border-t space-y-2">
-            <Button variant="brand" onClick={handleFileUpload} className="w-full">
-              <Upload className="h-5 w-5 mr-2" /> Upload Resume
-            </Button>
-            <Button variant="brand-outline" onClick={handlePreviewResume} className="w-full">
-              <Eye className="h-5 w-5 mr-2" /> Preview Resume
-            </Button>
-          </div>
+  <div ref={chatListRef} className="flex-1 overflow-y-auto px-2 py-3">
+    <div className="space-y-2">
+      {chatHistory.map((chat) => (
+        <div key={chat.id} className="flex items-center justify-between space-x-2">
+          <Button
+            variant={chat.id === activeChatId ? "brand" : "outline"}
+            className="flex-1 text-left"
+            onClick={() => handleSelectChat(chat.id)}
+          >
+            {chat.title || `Chat ${chat.chat_id}`}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => handleDeleteChat(chat.id)}>
+            <Trash className="h-4 w-4 text-red-500" />
+          </Button>
         </div>
+      ))}
+
+      {chatHistory.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center mt-6">
+          No chats yet — start by typing a message.
+        </p>
+      )}
+    </div>
+  </div>
+
+  {/* Feature buttons */}
+  <div className="p-4 border-t space-y-2">
+    <Button variant="brand" onClick={handleFileUpload} className="w-full">
+      <Upload className="h-5 w-5 mr-2" /> Upload Resume
+    </Button>
+    <Button variant="brand-outline" onClick={handlePreviewResume} className="w-full">
+      <Eye className="h-5 w-5 mr-2" /> Preview Resume
+    </Button>
+    <Button variant="outline" onClick={() => navigate("/manual_editor")} className="w-full">
+      Manual Editor
+    </Button>
+    <Button variant="outline" onClick={() => navigate("/jd_parser")} className="w-full">
+      JD Parser
+    </Button>
+    <Button variant="outline" onClick={() => navigate("/gap_detection")} className="w-full">
+      Gap Detection
+    </Button>
+    <Button variant="outline" onClick={() => navigate("/ats_scoring")} className="w-full">
+      ATS Scoring
+    </Button>
+    <Button variant="outline" onClick={() => navigate("/collaboration")} className="w-full">
+      Collaboration
+    </Button>
+  </div>
+</div>
+
 
         {/* Chat area */}
         <div className="flex-1 flex flex-col min-w-0">

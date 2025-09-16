@@ -14,7 +14,7 @@ async def personal_info_tool(query: str, session_id: str) -> dict:
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query}
     ]
-    result_text = await chat_with_llm(messages)  # async
+    result_text = chat_with_llm(messages)  # async
     return {"result": result_text}
 
 

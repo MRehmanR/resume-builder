@@ -29,18 +29,21 @@ const extractSection = (markdown: string, section: string) => {
 const extractPersonalInfo = (raw: string) => {
   const personalSection = extractSection(raw, "Personal Information") || raw
 
-  const matchName = personalSection.match(/[-*]\s*\*\*Name\*\*:\s*(.+)/i)
-  const matchPhone = personalSection.match(/[-*]\s*\*\*Phone\*\*:\s*(.+)/i)
-  const matchEmail = personalSection.match(/[-*]\s*\*\*Email\*\*:\s*(.+)/i)
-  const matchLinkedIn = personalSection.match(/[-*]\s*\*\*LinkedIn\*\*:\s*(.+)/i)
-  const matchGitHub = personalSection.match(/[-*]\s*\*\*GitHub\*\*:\s*(.+)/i)
+  const matchField = (field: string) =>
+    personalSection.match(new RegExp(`[-*]\\s*(\\*\\*)?${field}(\\*\\*)?:\\s*(.+)`, "i"))
+
+  const matchName = matchField("Name")
+  const matchPhone = matchField("Phone")
+  const matchEmail = matchField("Email")
+  const matchLinkedIn = matchField("LinkedIn")
+  const matchGitHub = matchField("GitHub")
 
   return {
-    name: matchName ? matchName[1].trim() : "",
-    phone: matchPhone ? matchPhone[1].trim() : "",
-    email: matchEmail ? matchEmail[1].trim() : "",
-    linkedin: matchLinkedIn ? matchLinkedIn[1].trim() : "",
-    github: matchGitHub ? matchGitHub[1].trim() : "",
+    name: matchName ? matchName[3].trim() : "",
+    phone: matchPhone ? matchPhone[3].trim() : "",
+    email: matchEmail ? matchEmail[3].trim() : "",
+    linkedin: matchLinkedIn ? matchLinkedIn[3].trim() : "",
+    github: matchGitHub ? matchGitHub[3].trim() : "",
   }
 }
 
