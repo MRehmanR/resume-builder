@@ -10,7 +10,6 @@ from database.db import get_db, engine, Base
 from database.models import Chat, Message
 from prompt import SYSTEM_PROMPT
 from tools import personal_info, summary, experience, education, skills, projects, achievements
-from routers import jd_parser, collaboration, ats_scoring, gap_detection, manual_editor
 
 Base.metadata.create_all(bind=engine)
 
@@ -19,10 +18,7 @@ logging.basicConfig(level=logging.INFO)
 
 DEFAULT_SESSION = "default_session"
 session_store: Dict[str, Dict[str, Any]] = {}
-RESUME_TOOLS = [
-    "personal_info", "summary", "experience", "education", "skills", "projects", "achievements",
-    "jd_parser", "collaboration", "ats_scoring", "gap_detection", "auto_polish", "versioning"
-]
+RESUME_TOOLS = ["personal_info", "summary", "experience", "education", "skills", "projects", "achievements"]
 
 
 async def call_tool(tool_func: Callable[..., Any], input_data: Any, session_id: str) -> str:
@@ -71,21 +67,6 @@ async def _achievements_async(query, session_id): return await call_tool(achieve
                                                                          session_id)
 
 
-async def _jd_parser_async(query, session_id): return await call_tool(jd_parser, query, session_id)
-
-
-async def _collaboration_async(query, session_id): return await call_tool(collaboration, query, session_id)
-
-
-async def _ats_scoring_async(query, session_id): return await call_tool(ats_scoring, query, session_id)
-
-
-async def _gap_detection_async(query, session_id): return await call_tool(gap_detection, query, session_id)
-
-
-async def _manual_editor_async(query, session_id): return await call_tool(manual_editor, query, session_id)
-
-
 def bridge_for(async_callable: Callable[[Any, str], Any]) -> Callable[[Any, Optional[str]], Any]:
     def wrapper(input_data, session_id: Optional[str] = None):
         sid = session_id or DEFAULT_SESSION
@@ -108,12 +89,6 @@ education_bridge = bridge_for(_education_async)
 skills_bridge = bridge_for(_skills_async)
 projects_bridge = bridge_for(_projects_async)
 achievements_bridge = bridge_for(_achievements_async)
-jd_parser_bridge = bridge_for(_jd_parser_async)
-collaboration_bridge = bridge_for(_collaboration_async)
-ats_scoring_bridge = bridge_for(_ats_scoring_async)
-gap_detection_bridge = bridge_for(_gap_detection_async)
-manual_editor_bridge = bridge_for(_manual_editor_async)
-
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 tools = [
@@ -124,11 +99,6 @@ tools = [
     Tool(name="skills", func=skills_bridge, description="Extract skills from text"),
     Tool(name="projects", func=projects_bridge, description="Extract project details"),
     Tool(name="achievements", func=achievements_bridge, description="Extract achievements"),
-    Tool(name="jd_parser", func=jd_parser_bridge, description="Parse job description and extract info"),
-    Tool(name="collaboration", func=collaboration_bridge, description="Share resume with mentor/recruiter"),
-    Tool(name="ats_scoring", func=ats_scoring_bridge, description="Score resume against JD"),
-    Tool(name="gap_detection", func=gap_detection_bridge, description="Detect missing or weak sections"),
-    Tool(name="auto_polish", func=manual_editor_bridge, description="Improve vague bullet points"),
 ]
 RESUME_AGENT = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
@@ -260,13 +230,7 @@ def tools_module(tool_name: str):
         "education": education,
         "skills": skills,
         "projects": projects,
-        "achievements": achievements,
-        "jd_parser": jd_parser,
-        "collaboration": collaboration,
-        "ats_scoring": ats_scoring,
-        "gap_detection": gap_detection,
-        "manual_editor": manual_editor,
-
+        "achievements": achievements
     }[tool_name]
 
 
