@@ -1,0 +1,10 @@
+2025-09-16 19:19:46,221 - INFO - FastMCP server initialized and ready.
+2025-09-16 19:19:47,688 - INFO - Agent fell back to SYSTEM_PROMPT generation
+2025-09-16 19:19:51,156 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-16 19:20:05,198 - INFO - Agent fell back to SYSTEM_PROMPT generation
+2025-09-16 19:20:08,565 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-16 19:23:24,676 - INFO - FastMCP server initialized and ready.
+2025-09-16 19:23:34,060 - INFO - Agent fell back to SYSTEM_PROMPT generation
+2025-09-16 19:23:36,722 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-09-16 19:23:58,274 - INFO - Agent fell back to SYSTEM_PROMPT generation
+2025-09-16 19:24:00,110 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
