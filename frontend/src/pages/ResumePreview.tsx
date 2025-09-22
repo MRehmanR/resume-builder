@@ -7,46 +7,42 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, FileText, Download } from "lucide-react"
+import { ArrowLeft, FileText, Download, Edit } from "lucide-react"
 import { Link, useSearchParams } from "react-router-dom"
 import html2pdf from "html2pdf.js"
+
 import { ATSFormat } from "../components/resume-formats/ats-format"
 import { ModernFormat } from "../components/resume-formats/modern-format"
 import { SidebarFormat } from "../components/resume-formats/sidebar-format"
 import { CreativeFormat } from "../components/resume-formats/creative-format"
 import { ExecutiveFormat } from "../components/resume-formats/executive-format"
+import { EuropassFormat } from "../components/resume-formats/europass-format"
+import ResumeEditor from "../pages/ResumeEditors"
 
 const MCP_URL = "http://localhost:8000/mcp/tools/resume_agent"
 
-// Extract section by heading (works for ## Summary, ## Skills, etc.)
+// --- helpers ---
 const extractSection = (markdown: string, section: string) => {
   const regex = new RegExp(`## ${section}[\\s\\S]*?(?=##|$)`, "i")
   const match = markdown.match(regex)
   return match ? match[0].replace(`## ${section}`, "").trim() : ""
 }
 
-// Extract personal info (updated to match Markdown list format)
 const extractPersonalInfo = (raw: string) => {
   const personalSection = extractSection(raw, "Personal Information") || raw
-
   const matchField = (field: string) =>
     personalSection.match(new RegExp(`[-*]\\s*(\\*\\*)?${field}(\\*\\*)?:\\s*(.+)`, "i"))
 
-  const matchName = matchField("Name")
-  const matchPhone = matchField("Phone")
-  const matchEmail = matchField("Email")
-  const matchLinkedIn = matchField("LinkedIn")
-  const matchGitHub = matchField("GitHub")
-
   return {
-    name: matchName ? matchName[3].trim() : "",
-    phone: matchPhone ? matchPhone[3].trim() : "",
-    email: matchEmail ? matchEmail[3].trim() : "",
-    linkedin: matchLinkedIn ? matchLinkedIn[3].trim() : "",
-    github: matchGitHub ? matchGitHub[3].trim() : "",
+    name: matchField("Name")?.[3]?.trim() || "",
+    phone: matchField("Phone")?.[3]?.trim() || "",
+    email: matchField("Email")?.[3]?.trim() || "",
+    linkedin: matchField("LinkedIn")?.[3]?.trim() || "",
+    github: matchField("GitHub")?.[3]?.trim() || "",
   }
 }
 
+// --- types ---
 interface ResumeData {
   name?: string
   title?: string
@@ -54,17 +50,22 @@ interface ResumeData {
   phone?: string
   linkedin?: string
   github?: string
+  nationality?: string
+  dateOfBirth?: string
+  gender?: string
   summary: string
   skills: string
   experience: string
   education: string
   projects: string
   achievements: string
+  languages?: string
 }
 
 const ResumePreview = () => {
   const [searchParams] = useSearchParams()
   const session_id = searchParams.get("session_id") || ""
+
   const [format, setFormat] = useState("ats")
   const [resume, setResume] = useState<ResumeData>({
     summary: "",
@@ -75,9 +76,13 @@ const ResumePreview = () => {
     achievements: "",
   })
   const [loading, setLoading] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+
   const { toast } = useToast()
   const resumeRef = useRef<HTMLDivElement>(null)
+  const hiddenResumeRef = useRef<HTMLDivElement>(null)
 
+  // --- fetch resume preview ---
   const fetchPreview = async () => {
     if (!session_id) {
       toast({
@@ -95,7 +100,6 @@ const ResumePreview = () => {
       const raw = data.result || ""
 
       const personalInfo = extractPersonalInfo(raw)
-
       setResume({
         ...personalInfo,
         summary: extractSection(raw, "Summary") || extractSection(raw, "Professional Summary"),
@@ -104,8 +108,9 @@ const ResumePreview = () => {
         education: extractSection(raw, "Education"),
         projects: extractSection(raw, "Projects"),
         achievements: extractSection(raw, "Achievements"),
+        languages: extractSection(raw, "Languages"),
       })
-    } catch (err) {
+    } catch {
       toast({
         title: "Preview failed",
         description: "Could not load resume preview.",
@@ -116,26 +121,30 @@ const ResumePreview = () => {
     }
   }
 
+  // initial load & refetch on format change
   useEffect(() => {
     fetchPreview()
   }, [format])
 
+  // --- handle PDF download ---
   const handleDownload = () => {
-    if (!resumeRef.current) return
-    const element = resumeRef.current
+    if (!hiddenResumeRef.current) return
+    const element = hiddenResumeRef.current
 
     const opt = {
-      margin: 0.5,
+      margin: [0.2, 0.2, 0.2, 0.2],
       filename: `resume-${format}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2 },
+      image: { type: "jpeg", quality: 1.0 },
+      html2canvas: { scale: 3, scrollY: -window.scrollY, useCORS: true },
       jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
     }
 
     html2pdf().set(opt).from(element).save()
   }
 
-  const renderResumeFormat = () => {
+  // --- resume renderer ---
+  const renderResumeFormat = (isHidden = false) => {
     const formatProps = { resume }
 
     switch (format) {
@@ -149,9 +158,17 @@ const ResumePreview = () => {
         return <CreativeFormat {...formatProps} />
       case "executive":
         return <ExecutiveFormat {...formatProps} />
+      case "europass":
+        return <EuropassFormat {...formatProps} />
       default:
         return <ATSFormat {...formatProps} />
     }
+  }
+
+  // --- when editor saves ---
+  const handleEditorSave = (updatedSections: Record<string, string>) => {
+    setResume((prev) => ({ ...prev, ...updatedSections }))
+    setEditOpen(false)
   }
 
   return (
@@ -174,11 +191,16 @@ const ResumePreview = () => {
             </div>
           </div>
 
-          {/* Download Button */}
-          <Button variant="default" onClick={handleDownload}>
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button variant="default" onClick={() => setEditOpen(true)}>
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+            <Button variant="default" onClick={handleDownload}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -197,6 +219,7 @@ const ResumePreview = () => {
                 <SelectItem value="sidebar">Sidebar Format</SelectItem>
                 <SelectItem value="creative">Creative Format</SelectItem>
                 <SelectItem value="executive">Executive Format</SelectItem>
+                <SelectItem value="europass">Europass Format</SelectItem>
               </SelectContent>
             </Select>
           </CardHeader>
@@ -212,9 +235,45 @@ const ResumePreview = () => {
                 </div>
               )}
             </ScrollArea>
+
+            {/* Hidden for PDF export */}
+            <div className="hidden">
+              <div
+                ref={hiddenResumeRef}
+                className="w-full p-6 bg-white"
+                style={{
+                  width: "210mm",
+                  minHeight: "297mm",
+                  boxSizing: "border-box",
+                }}
+              >
+                {renderResumeFormat(true)}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Resume Editor */}
+      <ResumeEditor
+        session_id={session_id}
+        isOpen={editOpen}
+        onClose={() => setEditOpen(false)}
+        onSave={handleEditorSave}
+      />
+
+      {/* Global CSS for page breaks */}
+      <style>
+        {`
+          .resume-section {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+          .resume-section h2 {
+            page-break-after: avoid;
+          }
+        `}
+      </style>
     </div>
   )
 }

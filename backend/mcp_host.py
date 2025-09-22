@@ -13,12 +13,8 @@ import re
 from uuid import uuid4
 import logging
 import uvicorn
-from agent import RESUME_TOOLS
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
@@ -58,7 +54,6 @@ def create_session(db: Session = Depends(get_db)):
     db.add(new_chat)
     db.commit()
     db.refresh(new_chat)
-    logger.info(f"Created new session: {session_id}")
     return {"session_id": new_chat.session_id, "chat_id": new_chat.id, "message": "Session created successfully"}
 
 
@@ -68,7 +63,6 @@ def delete_session(session_id: str, db: Session = Depends(get_db)):
     if chat:
         db.delete(chat)
         db.commit()
-        logger.info(f"Deleted session: {session_id}")
         return {"message": f"Session {session_id} deleted successfully"}
     return {"error": "Session not found"}
 
@@ -78,6 +72,7 @@ def get_history(session_id: str, db: Session = Depends(get_db)):
     chat = db.query(Chat).filter(Chat.session_id == session_id).first()
     if not chat:
         return {"messages": []}
+
     return {
         "session_id": chat.session_id,
         "messages": [
@@ -96,38 +91,38 @@ async def resume_agent(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
     query = body.get("query", "")
     session_id = body.get("session_id", DEFAULT_SESSION)
-    logger.info(f"[MCP CALL] resume_agent called | Session: {session_id} | Query: {query[:100]}...")
-
     try:
         result = await Runner.run(RESUME_AGENT, query, context={"session_id": session_id}, db=db)
-        logger.info(
-            f"[MCP RESPONSE] resume_agent | Session: {session_id} | Output: {str(result['final_output'])[:100]}...")
+        logger.info(f"[RESUME_AGENT] Session: {session_id} | Query: {query[:100]}... | Result: {str(result)[:100]}...")
         return {"result": result["final_output"]}
     except Exception as e:
-        logger.error(f"[MCP ERROR] resume_agent | Session: {session_id} | Error: {e}")
+        logger.error(f"Error in resume_agent: {e}")
         return {"error": str(e)}
 
 
-for tool_name in RESUME_TOOLS:
-    endpoint = f"/mcp/tools/{tool_name}"
+@app.post("/mcp/tools/update_section")
+async def update_section(request: Request, db: Session = Depends(get_db)):
+    body = await request.json()
+    section = body.get("section")
+    content = body.get("content")
+    session_id = body.get("session_id", DEFAULT_SESSION)
 
+    if section not in ["personal_info", "summary", "experience", "education", "skills", "projects", "achievements"]:
+        return {"error": f"Invalid section: {section}"}
 
-    async def tool_endpoint(request: Request, tool=tool_name, db: Session = Depends(get_db)):
-        body = await request.json()
-        query = body.get("query", "")
-        session_id = body.get("session_id", DEFAULT_SESSION)
-        logger.info(f"[MCP CALL] Tool: {tool} | Session: {session_id} | Input: {query[:100]}...")
-        try:
-            result = await Runner.run(RESUME_AGENT, query, context={"session_id": session_id}, db=db)
-            output = result["final_output"]
-            logger.info(f"[MCP RESPONSE] Tool: {tool} | Session: {session_id} | Output: {str(output)[:100]}...")
-            return {"result": output}
-        except Exception as e:
-            logger.error(f"[MCP ERROR] Tool: {tool} | Session: {session_id} | Error: {e}")
-            return {"error": str(e)}
+    chat = db.query(Chat).filter(Chat.session_id == session_id).first()
+    if not chat:
+        chat = Chat(session_id=session_id)
+        db.add(chat)
+        db.commit()
+        db.refresh(chat)
 
+    update_msg = Message(chat_id=chat.id, role="assistant", content=f"[Update Section] {section}: {content}")
+    db.add(update_msg)
+    db.commit()
+    logger.info(f"[UPDATE_SECTION] Session: {session_id} | Section: {section} | Content: {content[:100]}...")
 
-    app.post(endpoint)(tool_endpoint)
+    return {"result": f"Section '{section}' updated successfully."}
 
 
 def extract_resume_content(text: str) -> str:
@@ -141,40 +136,16 @@ def extract_resume_content(text: str) -> str:
 
 @app.get("/mcp/tools/resume_agent/preview")
 def preview_resume(session_id: str = Query(DEFAULT_SESSION), db: Session = Depends(get_db)):
-    """
-    Preview the latest generated resume content for the session.
-    Combines all RESUME_TOOLS output stored in chat messages.
-    """
     chat = db.query(Chat).filter(Chat.session_id == session_id).first()
     if not chat:
         return {"result": "No resume data found."}
 
-    resume_content_parts = []
-    for msg in chat.messages:
-        if msg.role == "assistant" and msg.content:
-            if any(tool in msg.content.lower() for tool in RESUME_TOOLS):
-                resume_content_parts.append(msg.content)
+    for msg in reversed(chat.messages):
+        if msg.role == "assistant" and not msg.content.startswith("[Update Section]"):
+            resume_only = extract_resume_content(msg.content)
+            return {"result": resume_only}
 
-    if not resume_content_parts:
-        for msg in reversed(chat.messages):
-            if msg.role == "assistant" and msg.content:
-                resume_content_parts.append(msg.content)
-                break
-
-    if not resume_content_parts:
-        return {"result": "No resume data found."}
-
-    resume_text = "\n\n".join(resume_content_parts)
-
-    def extract_resume_content(text: str) -> str:
-        import re
-        match = re.search(r"(##|###|1\.)", text)
-        if match:
-            return text[match.start():].strip()
-        return text.strip()
-
-    cleaned_resume = extract_resume_content(resume_text)
-    return {"result": cleaned_resume}
+    return {"result": "No resume data found."}
 
 
 if __name__ == "__main__":

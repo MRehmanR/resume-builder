@@ -1,3 +1,4 @@
+import React from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -30,10 +31,20 @@ export const CreativeFormat = ({ resume }: CreativeFormatProps) => {
       <div className="relative z-10 p-8 sm:p-6">
         {/* Header */}
         <div className="text-center mb-8 relative">
-          <div className="inline-block">
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent mb-2">
-              {resume.name || "—"}
-            </h1>
+          <div className="inline-block text-center">
+  <svg width="100%" height="60" viewBox="0 0 600 60" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="nameGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#ec4899" />
+        <stop offset="50%" stopColor="#8b5cf6" />
+        <stop offset="100%" stopColor="#3b82f6" />
+      </linearGradient>
+    </defs>
+    <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" fontSize="48" fontWeight="bold" fill="url(#nameGradient)">
+      {resume.name || "—"}
+    </text>
+  </svg>
+
             <div className="h-1 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 rounded-full"></div>
           </div>
           <p className="text-xl text-gray-600 mt-4">{resume.title || ""}</p>

@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import json
 import logging
-from typing import Any, Callable, Dict, Optional, List
+from typing import Any, Callable, Dict, Optional
 from pathlib import Path
 
 import aiohttp
@@ -22,19 +22,13 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 DEFAULT_SESSION = "default_session"
-
 session_store: Dict[str, Dict[str, Any]] = {}
 
 RESUME_TOOLS = ["personal_info", "summary", "experience", "education", "skills", "projects", "achievements"]
+MCP_HOST = "http://localhost:8000/mcp/tools"
 
-MCP_HOST = "http://localhost:8000/mcp/tools"  # MCP server URL
 
-
-# ------------------- MCP Tool Caller -------------------
 async def call_mcp_tool(tool_name: str, input_data: str, session_id: str) -> str:
-    """
-    Call a specific tool via MCP endpoint.
-    """
     url = f"{MCP_HOST}/{tool_name}"
     payload = {"query": input_data, "session_id": session_id}
     logger.info(f"[MCP CALL] {tool_name} | Session: {session_id} | Input: {input_data[:100]}...")
@@ -58,7 +52,6 @@ async def _tool_async(tool_name: str, query: str, session_id: str):
     return await call_mcp_tool(tool_name, query, session_id)
 
 
-# ------------------- Bridge -------------------
 def bridge_for(tool_name: str) -> Callable[[Any, Optional[str]], Any]:
     def sync_or_awaitable(input_data, session_id: Optional[str] = None):
         sid = session_id or DEFAULT_SESSION
@@ -70,7 +63,6 @@ def bridge_for(tool_name: str) -> Callable[[Any, Optional[str]], Any]:
         if loop and loop.is_running():
             return asyncio.create_task(coro)
 
-        # Run in new event loop if not running
         import concurrent.futures
 
         def _run_in_new_loop(c):
@@ -88,7 +80,6 @@ def bridge_for(tool_name: str) -> Callable[[Any, Optional[str]], Any]:
     return sync_or_awaitable
 
 
-# ------------------- Bridges for all tools -------------------
 personal_info_bridge = bridge_for("personal_info")
 summary_bridge = bridge_for("summary")
 experience_bridge = bridge_for("experience")
@@ -97,7 +88,6 @@ skills_bridge = bridge_for("skills")
 projects_bridge = bridge_for("projects")
 achievements_bridge = bridge_for("achievements")
 
-# ------------------- LLM & Tools -------------------
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 tools = [
     Tool(name="personal_info", func=personal_info_bridge, description="Extract personal info from text"),
@@ -111,7 +101,6 @@ tools = [
 RESUME_AGENT = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
 
-# ------------------- Fallback Handler -------------------
 async def fallback_handler(query: str, session_id: str, llm_model) -> str:
     query_clean = query.strip()
     if not query_clean:
@@ -121,7 +110,6 @@ async def fallback_handler(query: str, session_id: str, llm_model) -> str:
     return response.generations[0][0].text
 
 
-# ------------------- LLM Decision -------------------
 async def decide_action_with_llm(user_message: str, session_id: str, llm_model) -> Dict[str, Any]:
     messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_message)]
     try:
@@ -146,7 +134,6 @@ async def decide_action_with_llm(user_message: str, session_id: str, llm_model) 
     return {"action": "fallback", "response": await fallback_handler(user_message, session_id, llm_model)}
 
 
-# ------------------- Determine Tool Heuristic -------------------
 def determine_tool_from_query(query: str) -> Optional[str]:
     q = query.lower()
     if any(x in q for x in ["name", "phone", "email", "contact"]):
@@ -166,7 +153,6 @@ def determine_tool_from_query(query: str) -> Optional[str]:
     return None
 
 
-# ------------------- Runner -------------------
 class Runner:
     @staticmethod
     async def run(agent, query: str, context: Optional[Dict] = None, db: Optional[Session] = None):
@@ -177,7 +163,8 @@ class Runner:
         if session_id not in session_store:
             session_store[session_id] = {
                 tool: [] if tool in ["experience", "education", "skills", "projects", "achievements"] else None
-                for tool in RESUME_TOOLS}
+                for tool in RESUME_TOOLS
+            }
         session_data = session_store[session_id]
 
         chat = db.query(Chat).filter(Chat.session_id == session_id).first()
@@ -193,14 +180,6 @@ class Runner:
 
         uploaded_files = [msg.content.replace("[Attachment]", "").strip()
                           for msg in chat.messages if msg.content.startswith("[Attachment]")]
-
-        if len(uploaded_files) > 1:
-            prompt = f"[agent_prompt] Multiple files uploaded. Please select which file to use: {', '.join(uploaded_files)}"
-            assistant_msg = Message(chat_id=chat.id, role="assistant", content=prompt)
-            db.add(assistant_msg)
-            db.commit()
-            return {"final_output": prompt}
-
         file_text = ""
         if len(uploaded_files) == 1:
             filename = uploaded_files[0]
@@ -229,10 +208,36 @@ class Runner:
                 action = "fallback"
                 decision = {"action": "fallback", "response": await fallback_handler(query_with_file, session_id, llm)}
 
+        if action == "update_section":
+            section = decision.get("section")
+            content = decision.get("content", "")
+            if section in session_data:
+                if section in ["experience", "education", "skills", "projects", "achievements"]:
+                    session_data[section].append(content)
+                else:
+                    session_data[section] = content
+                logger.info(
+                    f"[UPDATE_SECTION] Session: {session_id} | Section: {section} | Content: {content[:100]}...")
+
+                final_resume = ""
+                for tool_name in RESUME_TOOLS:
+                    section_input = session_data.get(tool_name)
+                    if not section_input or (isinstance(section_input, list) and len(section_input) == 0):
+                        continue
+                    if isinstance(section_input, list):
+                        for item in section_input:
+                            final_resume += await call_mcp_tool(tool_name, item, session_id) + "\n\n"
+                    else:
+                        final_resume += await call_mcp_tool(tool_name, section_input, session_id) + "\n\n"
+
+                assistant_msg = Message(chat_id=chat.id, role="assistant", content=final_resume.strip())
+                db.add(assistant_msg)
+                db.commit()
+                return {"final_output": final_resume.strip()}
+
         if action == "use_tool":
             tool_name = decision.get("tool")
             tool_input = decision.get("tool_input", query)
-            call_immediately = bool(decision.get("call_immediately", True))
             if tool_name not in RESUME_TOOLS:
                 tool_name = determine_tool_from_query(query)
             if not tool_name:
@@ -247,18 +252,21 @@ class Runner:
             else:
                 session_data[tool_name] = tool_input
 
-            if call_immediately:
-                output = await call_mcp_tool(tool_name, tool_input, session_id)
-                assistant_msg = Message(chat_id=chat.id, role="assistant", content=str(output))
-                db.add(assistant_msg)
-                db.commit()
-                return {"final_output": str(output)}
-            else:
-                prompt = f"Stored {tool_name} data. I can call the tool when you're ready or continue with other tasks."
-                assistant_msg = Message(chat_id=chat.id, role="assistant", content=prompt)
-                db.add(assistant_msg)
-                db.commit()
-                return {"final_output": prompt}
+            final_resume = ""
+            for section_name in RESUME_TOOLS:
+                section_input = session_data.get(section_name)
+                if not section_input or (isinstance(section_input, list) and len(section_input) == 0):
+                    continue
+                if isinstance(section_input, list):
+                    for item in section_input:
+                        final_resume += await call_mcp_tool(section_name, item, session_id) + "\n\n"
+                else:
+                    final_resume += await call_mcp_tool(section_name, section_input, session_id) + "\n\n"
+
+            assistant_msg = Message(chat_id=chat.id, role="assistant", content=final_resume.strip())
+            db.add(assistant_msg)
+            db.commit()
+            return {"final_output": final_resume.strip()}
 
         resp = await fallback_handler(query_with_file, session_id, llm)
         assistant_msg = Message(chat_id=chat.id, role="assistant", content=resp)
@@ -267,7 +275,6 @@ class Runner:
         return {"final_output": resp}
 
 
-# ------------------- Public Runner -------------------
 async def run_resume_agent(query: str, session_id: Optional[str] = None, db: Optional[Session] = None) -> Any:
     ctx = {"session_id": session_id or DEFAULT_SESSION}
     r = await Runner.run(RESUME_AGENT, query, ctx, db=db)
